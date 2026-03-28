@@ -1,8 +1,10 @@
 import { currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { BoardCard } from "@/components/dashboard/board-card";
+import { PaperTradePanel } from "@/components/dashboard/paper-trade-panel";
 import { getBoardById, getBoardsForSchool } from "@/lib/mock-boards";
+import { getPaperState } from "@/lib/paper-trading-state";
 import { getUserSchool } from "@/lib/user-school";
 
 type Props = { params: Promise<{ id: string }> };
@@ -10,12 +12,20 @@ type Props = { params: Promise<{ id: string }> };
 export default async function BoardDetailPage({ params }: Props) {
   const { id } = await params;
   const user = await currentUser();
+  if (!user) {
+    redirect("/sign-in");
+  }
   const school = getUserSchool(user);
   const board = getBoardById(id);
 
   if (!board || !school || board.schoolId !== school.universityId) {
     notFound();
   }
+
+  const paper = await getPaperState(user.id);
+  const rawPos = paper.positions[board.id];
+  const position =
+    rawPos && rawPos.qty > 0 ? rawPos : null;
 
   const related = getBoardsForSchool(school.universityId).filter(
     (b) => b.id !== id,
@@ -65,15 +75,12 @@ export default async function BoardDetailPage({ params }: Props) {
         </dl>
       </div>
 
-      <div className="mt-8 rounded-2xl border border-dashed border-bb-border bg-bb-surface/50 px-6 py-8 text-center">
-        <p className="font-display font-bold text-bb-chalk">Trade (coming soon)</p>
-        <p className="mt-2 text-sm text-bb-dim">
-          Signed in as{" "}
-          <span className="font-semibold text-bb-chalk">
-            {user?.primaryEmailAddress?.emailAddress ?? user?.id}
-          </span>
-          . Yes/No sizing hooks in next.
-        </p>
+      <div className="mt-8">
+        <PaperTradePanel
+          board={board}
+          position={position}
+          balanceCents={paper.balanceCents}
+        />
       </div>
 
       <section className="mt-12">
