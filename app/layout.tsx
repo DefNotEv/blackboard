@@ -20,6 +20,9 @@ export const metadata: Metadata = {
   description: "Campus-scoped boards—trade on what happens at your school.",
 };
 
+/** Clerk reads auth from the request; static prerender can break on some hosts without this. */
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({
   children,
 }: Readonly<{

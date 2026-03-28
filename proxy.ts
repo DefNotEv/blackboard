@@ -5,7 +5,8 @@ const isProtectedRoute = createRouteMatcher([
   "/onboarding(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
+/** Named `proxy` export is what Next.js 16 resolves first (see build/templates/middleware.js). */
+export const proxy = clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) await auth.protect();
 });
 
