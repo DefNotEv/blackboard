@@ -118,8 +118,7 @@ export default async function DashboardPage() {
           <div className="mt-4 rounded-2xl border border-dashed border-bb-border bg-bb-surface/50 px-6 py-14 text-center">
             <p className="font-semibold text-bb-chalk">No open positions yet</p>
             <p className="mt-2 mx-auto max-w-md text-sm text-bb-dim">
-              Open a campus board and use paper trade—prices follow the mock
-              consensus, no market data API.
+              Open a campus board and use paper trade.
             </p>
           </div>
         ) : (
