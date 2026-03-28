@@ -17,15 +17,19 @@ export function HomeAuth() {
             <SignInButton mode="modal">
               <button
                 type="button"
-                className="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                className="rounded-xl border border-bb-border bg-bb-chalk px-8 py-3 text-sm font-bold tracking-tight text-bb-bg transition hover:bg-bb-chalk/90"
               >
                 Sign in
               </button>
             </SignInButton>
-            <SignUpButton mode="modal">
+            <SignUpButton
+              mode="modal"
+              fallbackRedirectUrl="/onboarding"
+              forceRedirectUrl="/onboarding"
+            >
               <button
                 type="button"
-                className="rounded-full border border-zinc-300 bg-white px-6 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+                className="rounded-xl border border-bb-border bg-transparent px-8 py-3 text-sm font-bold tracking-tight text-bb-chalk transition hover:bg-bb-raised"
               >
                 Sign up
               </button>
@@ -36,12 +40,12 @@ export function HomeAuth() {
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <UserButton
               appearance={{
-                elements: { avatarBox: "h-10 w-10" },
+                elements: { avatarBox: "h-10 w-10 ring-2 ring-bb-border" },
               }}
             />
             <Link
               href="/dashboard"
-              className="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              className="rounded-xl border border-bb-border bg-bb-chalk px-8 py-3 text-sm font-bold tracking-tight text-bb-bg transition hover:bg-bb-chalk/90"
             >
               Open dashboard
             </Link>
@@ -49,18 +53,18 @@ export function HomeAuth() {
         </Show>
       </div>
 
-      <p className="text-xs text-zinc-500 dark:text-zinc-500">
+      <p className="text-xs text-bb-muted">
         Full-page auth:{" "}
         <Link
           href="/sign-in"
-          className="font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-300"
+          className="font-semibold text-bb-dim underline underline-offset-4 hover:text-bb-chalk"
         >
           /sign-in
         </Link>
         ,{" "}
         <Link
           href="/sign-up"
-          className="font-medium text-zinc-700 underline underline-offset-4 dark:text-zinc-300"
+          className="font-semibold text-bb-dim underline underline-offset-4 hover:text-bb-chalk"
         >
           /sign-up
         </Link>

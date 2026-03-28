@@ -1,21 +1,23 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Sans, Syne } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const syne = Syne({
+  variable: "--font-display-brand",
   subsets: ["latin"],
+  weight: ["700", "800"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const dmSans = DM_Sans({
+  variable: "--font-sans-body",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Campus Markets",
-  description: "School-scoped prediction markets (hackathon MVP)",
+  title: "Blackboard",
+  description: "Campus-scoped boards—trade on what happens at your school.",
 };
 
 export default function RootLayout({
@@ -24,12 +26,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        variables: {
+          colorPrimary: "#e6e4df",
+          colorText: "#e6e4df",
+          colorTextSecondary: "#9b9da8",
+          colorBackground: "#16181f",
+          colorInputBackground: "#1e212b",
+          colorNeutral: "#2a2d38",
+        },
+      }}
+    >
       <html
         lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+        className={`${syne.variable} ${dmSans.variable} h-full antialiased`}
       >
-        <body className="min-h-full flex flex-col">{children}</body>
+        <body className="min-h-full flex flex-col font-sans">{children}</body>
       </html>
     </ClerkProvider>
   );
