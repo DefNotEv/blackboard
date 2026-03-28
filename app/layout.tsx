@@ -31,13 +31,18 @@ export default function RootLayout({
   return (
     <ClerkProvider
       appearance={{
+        baseTheme: "dark",
         variables: {
+          // Chalk accent on CTAs — needs a dark foreground (see Clerk variables docs).
           colorPrimary: "#e6e4df",
-          colorText: "#e6e4df",
-          colorTextSecondary: "#9b9da8",
+          colorPrimaryForeground: "#0f1014",
+          colorForeground: "#e6e4df",
+          colorMutedForeground: "#9b9da8",
           colorBackground: "#16181f",
-          colorInputBackground: "#1e212b",
+          colorInput: "#1e212b",
+          colorInputForeground: "#e6e4df",
           colorNeutral: "#2a2d38",
+          colorBorder: "#2a2d38",
         },
       }}
     >
