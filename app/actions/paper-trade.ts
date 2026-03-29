@@ -105,201 +105,225 @@ export async function buyPaper(
   _prev: PaperTradeResult | null,
   formData: FormData,
 ): Promise<PaperTradeResult> {
-  const { userId } = await auth();
-  if (!userId) return { ok: false, error: "Sign in to trade." };
+  try {
+    const { userId } = await auth();
+    if (!userId) return { ok: false, error: "Sign in to trade." };
 
-  const boardId = String(formData.get("boardId") ?? "");
-  const side = (formData.get("side") === "no" ? "no" : "yes") as PaperSide;
-  const qtyRaw = Number(formData.get("qty"));
+    const boardId = String(formData.get("boardId") ?? "");
+    const side = (formData.get("side") === "no" ? "no" : "yes") as PaperSide;
+    const qtyRaw = Number(formData.get("qty"));
 
-  const board = await requireCampusBoard(boardId);
-  if (!board) return { ok: false, error: "Board not available." };
+    const board = await requireCampusBoard(boardId);
+    if (!board) return { ok: false, error: "Board not available." };
 
-  const qty = Math.floor(qtyRaw);
-  if (!Number.isFinite(qty) || qty < 1 || qty > 10_000) {
-    return { ok: false, error: "Enter a size between 1 and 10,000 contracts." };
-  }
+    const qty = Math.floor(qtyRaw);
+    if (!Number.isFinite(qty) || qty < 1 || qty > 10_000) {
+      return { ok: false, error: "Enter a size between 1 and 10,000 contracts." };
+    }
 
-  const price = markPriceCents(board, side);
-  const costCents = qty * price;
+    const price = markPriceCents(board, side);
+    const costCents = qty * price;
 
-  const state = await getPaperState(userId);
+    const state = await getPaperState(userId);
 
-  const existing = state.positions[boardId];
-  if (existing && existing.qty > 0 && existing.side !== side) {
+    const existing = state.positions[boardId];
+    if (existing && existing.qty > 0 && existing.side !== side) {
+      return {
+        ok: false,
+        error:
+          "You already have the opposite side on this board. Close it first.",
+      };
+    }
+
+    if (state.balanceCents < costCents) {
+      return {
+        ok: false,
+        error: `Not enough paper cash (need ${(costCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}).`,
+      };
+    }
+
+    let next: PaperPosition;
+    if (!existing || existing.qty <= 0) {
+      next = { side, qty, avgEntryCents: price };
+    } else {
+      const totalQty = existing.qty + qty;
+      const avg =
+        (existing.qty * existing.avgEntryCents + qty * price) / totalQty;
+      next = {
+        side,
+        qty: totalQty,
+        avgEntryCents: Math.round(avg * 100) / 100,
+      };
+    }
+
+    await ensureMongoIndexes();
+    const now = new Date();
+    const [accountsCol, positionsCol, tradesCol] = await Promise.all([
+      getPaperAccountsCollection(),
+      getPositionsCollection(),
+      getTradesCollection(),
+    ]);
+
+    await accountsCol.updateOne(
+      { userId },
+      {
+        $set: {
+          balanceCents: state.balanceCents - costCents,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          userId,
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    );
+
+    await positionsCol.updateOne(
+      { userId, boardId },
+      {
+        $set: {
+          side: next.side,
+          qty: next.qty,
+          avgEntryCents: next.avgEntryCents,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    );
+
+    await tradesCol.insertOne({
+      userId,
+      boardId,
+      side: side as TradeSide,
+      qty,
+      priceCents: price,
+      createdAt: now,
+    });
+
+    const market = await updateBoardMarket(boardId, side as TradeSide, qty, true);
+    if (market) {
+      try {
+        await publishBoardUpdated({
+          ...market,
+          at: new Date().toISOString(),
+        });
+      } catch {
+        // Trade succeeded; skip realtime broadcast on publish errors.
+      }
+    }
+
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/boards");
+    revalidatePath("/dashboard/positions");
+    revalidatePath(`/dashboard/boards/${boardId}`);
+
+    const { yes, no } = yesNoPrices(board);
+    const label = side === "yes" ? `Yes @ ${yes}¢` : `No @ ${no}¢`;
+    return {
+      ok: true,
+      message: `Bought ${qty} ${label} (paper).`,
+    };
+  } catch {
     return {
       ok: false,
       error:
-        "You already have the opposite side on this board. Close it first.",
+        "Trading service is unavailable right now. Check MongoDB/Pusher environment settings in deployment.",
     };
   }
-
-  if (state.balanceCents < costCents) {
-    return {
-      ok: false,
-      error: `Not enough paper cash (need ${(costCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}).`,
-    };
-  }
-
-  let next: PaperPosition;
-  if (!existing || existing.qty <= 0) {
-    next = { side, qty, avgEntryCents: price };
-  } else {
-    const totalQty = existing.qty + qty;
-    const avg =
-      (existing.qty * existing.avgEntryCents + qty * price) / totalQty;
-    next = {
-      side,
-      qty: totalQty,
-      avgEntryCents: Math.round(avg * 100) / 100,
-    };
-  }
-
-  await ensureMongoIndexes();
-  const now = new Date();
-  const [accountsCol, positionsCol, tradesCol] = await Promise.all([
-    getPaperAccountsCollection(),
-    getPositionsCollection(),
-    getTradesCollection(),
-  ]);
-
-  await accountsCol.updateOne(
-    { userId },
-    {
-      $set: {
-        balanceCents: state.balanceCents - costCents,
-        updatedAt: now,
-      },
-      $setOnInsert: {
-        userId,
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
-
-  await positionsCol.updateOne(
-    { userId, boardId },
-    {
-      $set: {
-        side: next.side,
-        qty: next.qty,
-        avgEntryCents: next.avgEntryCents,
-        updatedAt: now,
-      },
-      $setOnInsert: {
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
-
-  await tradesCol.insertOne({
-    userId,
-    boardId,
-    side: side as TradeSide,
-    qty,
-    priceCents: price,
-    createdAt: now,
-  });
-
-  const market = await updateBoardMarket(boardId, side as TradeSide, qty, true);
-  if (market) {
-    await publishBoardUpdated({
-      ...market,
-      at: new Date().toISOString(),
-    });
-  }
-
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/boards");
-  revalidatePath("/dashboard/positions");
-  revalidatePath(`/dashboard/boards/${boardId}`);
-
-  const { yes, no } = yesNoPrices(board);
-  const label = side === "yes" ? `Yes @ ${yes}¢` : `No @ ${no}¢`;
-  return {
-    ok: true,
-    message: `Bought ${qty} ${label} (paper).`,
-  };
 }
 
 export async function sellPaper(
   _prev: PaperTradeResult | null,
   formData: FormData,
 ): Promise<PaperTradeResult> {
-  const { userId } = await auth();
-  if (!userId) return { ok: false, error: "Sign in to trade." };
+  try {
+    const { userId } = await auth();
+    if (!userId) return { ok: false, error: "Sign in to trade." };
 
-  const boardId = String(formData.get("boardId") ?? "");
+    const boardId = String(formData.get("boardId") ?? "");
 
-  const board = await requireCampusBoard(boardId);
-  if (!board) return { ok: false, error: "Board not available." };
+    const board = await requireCampusBoard(boardId);
+    if (!board) return { ok: false, error: "Board not available." };
 
-  const state = await getPaperState(userId);
+    const state = await getPaperState(userId);
 
-  const existing = state.positions[boardId];
-  if (!existing || existing.qty <= 0) {
-    return { ok: false, error: "No open position on this board." };
-  }
+    const existing = state.positions[boardId];
+    if (!existing || existing.qty <= 0) {
+      return { ok: false, error: "No open position on this board." };
+    }
 
-  const price = markPriceCents(board, existing.side);
-  const proceedsCents = existing.qty * price;
+    const price = markPriceCents(board, existing.side);
+    const proceedsCents = existing.qty * price;
 
-  await ensureMongoIndexes();
-  const now = new Date();
-  const [accountsCol, positionsCol, tradesCol] = await Promise.all([
-    getPaperAccountsCollection(),
-    getPositionsCollection(),
-    getTradesCollection(),
-  ]);
+    await ensureMongoIndexes();
+    const now = new Date();
+    const [accountsCol, positionsCol, tradesCol] = await Promise.all([
+      getPaperAccountsCollection(),
+      getPositionsCollection(),
+      getTradesCollection(),
+    ]);
 
-  await accountsCol.updateOne(
-    { userId },
-    {
-      $set: {
-        balanceCents: state.balanceCents + proceedsCents,
-        updatedAt: now,
+    await accountsCol.updateOne(
+      { userId },
+      {
+        $set: {
+          balanceCents: state.balanceCents + proceedsCents,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          userId,
+          createdAt: now,
+        },
       },
-      $setOnInsert: {
-        userId,
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
+      { upsert: true },
+    );
 
-  await positionsCol.deleteOne({ userId, boardId });
+    await positionsCol.deleteOne({ userId, boardId });
 
-  await tradesCol.insertOne({
-    userId,
-    boardId,
-    side: existing.side as TradeSide,
-    qty: -existing.qty,
-    priceCents: price,
-    createdAt: now,
-  });
-
-  const market = await updateBoardMarket(
-    boardId,
-    existing.side as TradeSide,
-    existing.qty,
-    false,
-  );
-  if (market) {
-    await publishBoardUpdated({
-      ...market,
-      at: new Date().toISOString(),
+    await tradesCol.insertOne({
+      userId,
+      boardId,
+      side: existing.side as TradeSide,
+      qty: -existing.qty,
+      priceCents: price,
+      createdAt: now,
     });
+
+    const market = await updateBoardMarket(
+      boardId,
+      existing.side as TradeSide,
+      existing.qty,
+      false,
+    );
+    if (market) {
+      try {
+        await publishBoardUpdated({
+          ...market,
+          at: new Date().toISOString(),
+        });
+      } catch {
+        // Trade succeeded; skip realtime broadcast on publish errors.
+      }
+    }
+
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/boards");
+    revalidatePath("/dashboard/positions");
+    revalidatePath(`/dashboard/boards/${boardId}`);
+
+    return {
+      ok: true,
+      message: `Sold ${existing.qty} contracts at consensus (paper).`,
+    };
+  } catch {
+    return {
+      ok: false,
+      error:
+        "Trading service is unavailable right now. Check MongoDB/Pusher environment settings in deployment.",
+    };
   }
-
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/boards");
-  revalidatePath("/dashboard/positions");
-  revalidatePath(`/dashboard/boards/${boardId}`);
-
-  return {
-    ok: true,
-    message: `Sold ${existing.qty} contracts at consensus (paper).`,
-  };
 }
