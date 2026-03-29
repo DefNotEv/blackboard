@@ -2,8 +2,9 @@ import Link from "next/link";
 
 const nav = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard#boards", label: "Boards" },
-  { href: "/dashboard#positions", label: "Positions" },
+  { href: "/dashboard/boards", label: "Boards" },
+  { href: "/dashboard/positions", label: "Positions" },
+  { href: "/dashboard/chalk", label: "Chalk" },
 ] as const;
 
 export function DashboardSidebar({

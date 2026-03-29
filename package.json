@@ -7,13 +7,20 @@
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:boards": "node --env-file=.env.local scripts/seed-boards.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.7",
+    "@google/genai": "^1.47.0",
+    "mongodb": "^7.1.1",
     "next": "16.2.1",
+    "pusher": "^5.3.3",
+    "pusher-js": "^8.4.3",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

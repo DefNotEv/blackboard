@@ -3,7 +3,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { BoardCard } from "@/components/dashboard/board-card";
 import { PaperTradePanel } from "@/components/dashboard/paper-trade-panel";
-import { getBoardById, getBoardsForSchool } from "@/lib/mock-boards";
+import {
+  getBoardByIdFromStore,
+  getBoardsForSchoolFromStore,
+} from "@/lib/boards-store";
 import { getPaperState } from "@/lib/paper-trading-state";
 import { getUserSchool } from "@/lib/user-school";
 
@@ -16,7 +19,7 @@ export default async function BoardDetailPage({ params }: Props) {
     redirect("/sign-in");
   }
   const school = getUserSchool(user);
-  const board = getBoardById(id);
+  const board = await getBoardByIdFromStore(id);
 
   if (!board || !school || board.schoolId !== school.universityId) {
     notFound();
@@ -27,7 +30,7 @@ export default async function BoardDetailPage({ params }: Props) {
   const position =
     rawPos && rawPos.qty > 0 ? rawPos : null;
 
-  const related = getBoardsForSchool(school.universityId).filter(
+  const related = (await getBoardsForSchoolFromStore(school.universityId)).filter(
     (b) => b.id !== id,
   );
 
@@ -36,7 +39,7 @@ export default async function BoardDetailPage({ params }: Props) {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <Link
-        href="/dashboard#boards"
+        href="/dashboard/boards"
         className="text-sm font-semibold text-bb-dim underline-offset-4 transition hover:text-bb-chalk hover:underline"
       >
         ← All boards

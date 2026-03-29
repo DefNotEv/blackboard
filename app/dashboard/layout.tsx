@@ -2,6 +2,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
+import { RealtimeRefresh } from "@/components/dashboard/realtime-refresh";
 import { UserMenu } from "@/components/dashboard/user-menu";
 import { getUserSchool } from "@/lib/user-school";
 
@@ -23,6 +24,7 @@ export default async function DashboardLayout({
     <div className="flex min-h-full flex-col bg-bb-bg lg:flex-row">
       <DashboardSidebar universityName={school.universityName} />
       <div className="flex min-h-full flex-1 flex-col lg:pl-56">
+        <RealtimeRefresh schoolId={school.universityId} />
         <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-bb-border bg-bb-bg/90 px-4 py-3 backdrop-blur lg:px-8">
           <Link
             href="/"

@@ -1,6 +1,14 @@
-import type { BoardPreview } from "@/components/dashboard/board-card";
+import { MongoClient } from "mongodb";
 
-export const MOCK_BOARDS: BoardPreview[] = [
+const mongoUri = process.env.MONGODB_URI;
+const dbName = process.env.MONGODB_DB ?? "blackboard";
+
+if (!mongoUri) {
+  console.error("Missing MONGODB_URI in environment.");
+  process.exit(1);
+}
+
+const seedBoards = [
   {
     id: "purdue-academic-success-center",
     schoolId: "purdue",
@@ -219,14 +227,44 @@ export const MOCK_BOARDS: BoardPreview[] = [
   },
 ];
 
-export function getBoardsForSchool(schoolId: string): BoardPreview[] {
-  return MOCK_BOARDS.filter((b) => b.schoolId === schoolId);
+const now = new Date();
+
+async function run() {
+  const client = new MongoClient(mongoUri);
+  await client.connect();
+  try {
+    const db = client.db(dbName);
+    const boards = db.collection("boards");
+
+    let upserts = 0;
+    for (const board of seedBoards) {
+      const result = await boards.updateOne(
+        { id: board.id },
+        {
+          $set: {
+            ...board,
+            updatedAt: now,
+          },
+          $setOnInsert: {
+            createdAt: now,
+          },
+        },
+        { upsert: true },
+      );
+      if (result.upsertedCount > 0 || result.modifiedCount > 0) {
+        upserts += 1;
+      }
+    }
+
+    console.log(
+      `Seed complete. Processed ${seedBoards.length} boards, changed ${upserts}.`,
+    );
+  } finally {
+    await client.close();
+  }
 }
 
-export function getBoardById(id: string): BoardPreview | undefined {
-  return MOCK_BOARDS.find((b) => b.id === id);
-}
-
-export function getAllBoards(): BoardPreview[] {
-  return [...MOCK_BOARDS];
-}
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

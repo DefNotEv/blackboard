@@ -1,8 +1,7 @@
 import type { BoardPreview } from "@/components/dashboard/board-card";
-import { getBoardById } from "@/lib/mock-boards";
 
 export const PAPER_COOKIE = "bb_paper_v1";
-const DEFAULT_BALANCE_CENTS = 1_000_000; // $10,000 paper
+export const PAPER_STARTING_BALANCE_CENTS = 1_000_000; // $10,000 paper
 
 export type PaperSide = "yes" | "no";
 
@@ -22,7 +21,7 @@ export type PaperState = {
 export function defaultPaperState(userId: string): PaperState {
   return {
     userId,
-    balanceCents: DEFAULT_BALANCE_CENTS,
+    balanceCents: PAPER_STARTING_BALANCE_CENTS,
     positions: {},
   };
 }
@@ -66,23 +65,3 @@ export type OpenPositionRow = {
   position: PaperPosition;
   unrealizedCents: number;
 };
-
-export function listOpenPositions(state: PaperState): OpenPositionRow[] {
-  const rows: OpenPositionRow[] = [];
-  for (const [boardId, position] of Object.entries(state.positions)) {
-    if (position.qty <= 0) continue;
-    const board = getBoardById(boardId);
-    if (!board) continue;
-    rows.push({
-      boardId,
-      board,
-      position,
-      unrealizedCents: unrealizedPnlCents(position, board),
-    });
-  }
-  return rows;
-}
-
-export function totalUnrealizedCents(state: PaperState): number {
-  return listOpenPositions(state).reduce((s, r) => s + r.unrealizedCents, 0);
-}

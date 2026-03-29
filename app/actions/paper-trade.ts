@@ -2,41 +2,103 @@
 
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
-import type { PaperPosition, PaperSide, PaperState } from "@/lib/paper-trading";
+import { getBoardByIdFromStore } from "@/lib/boards-store";
 import {
-  defaultPaperState,
+  ensureMongoIndexes,
+  getBoardsCollection,
+  getPaperAccountsCollection,
+  getPositionsCollection,
+  getTradesCollection,
+  type TradeSide,
+} from "@/lib/db";
+import { publishBoardUpdated } from "@/lib/pusher-server";
+import type { PaperPosition, PaperSide } from "@/lib/paper-trading";
+import {
   markPriceCents,
-  PAPER_COOKIE,
   yesNoPrices,
 } from "@/lib/paper-trading";
 import { getPaperState } from "@/lib/paper-trading-state";
-import { getBoardById } from "@/lib/mock-boards";
 import { getUserSchool } from "@/lib/user-school";
 
 export type PaperTradeResult =
   | { ok: true; message: string }
   | { ok: false; error: string };
 
+function parseVolumeLabelToCents(volumeLabel: string): number {
+  const normalized = volumeLabel.trim().toLowerCase();
+  const hasK = normalized.endsWith("k");
+  const numeric = Number.parseFloat(normalized.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(numeric)) return 0;
+  const dollars = hasK ? numeric * 1000 : numeric;
+  return Math.round(dollars * 100);
+}
+
+function formatVolumeLabel(cents: number): string {
+  const dollars = cents / 100;
+  if (dollars >= 1000) {
+    const k = dollars / 1000;
+    const rounded = k >= 10 ? k.toFixed(0) : k.toFixed(1);
+    return `$${rounded}k`;
+  }
+  return `$${Math.round(dollars).toLocaleString("en-US")}`;
+}
+
+function clampPct(value: number): number {
+  return Math.min(98, Math.max(2, Math.round(value)));
+}
+
+function impactForQty(qty: number): number {
+  return Math.min(8, Math.max(0.2, qty / 250));
+}
+
+async function updateBoardMarket(
+  boardId: string,
+  side: TradeSide,
+  qty: number,
+  isBuy: boolean,
+) {
+  const boardsCol = await getBoardsCollection();
+  const board = await boardsCol.findOne({ id: boardId });
+  if (!board) return null;
+
+  const impact = impactForQty(qty);
+  const signed = isBuy ? impact : -impact;
+  const direction = side === "yes" ? 1 : -1;
+
+  const nextYes = clampPct(board.yesPct + direction * signed);
+  const oldVolume = parseVolumeLabelToCents(board.volumeLabel);
+  const volumeDelta = Math.max(100, Math.round(qty * (board.yesPct / 100) * 100));
+  const nextVolume = oldVolume + volumeDelta;
+  const nextVolumeLabel = formatVolumeLabel(nextVolume);
+
+  await boardsCol.updateOne(
+    { id: boardId },
+    {
+      $set: {
+        yesPct: nextYes,
+        volumeLabel: nextVolumeLabel,
+        volumeCents: nextVolume,
+        updatedAt: new Date(),
+      },
+    },
+  );
+
+  return {
+    boardId: board.id,
+    schoolId: board.schoolId,
+    yesPct: nextYes,
+    volumeLabel: nextVolumeLabel,
+  };
+}
+
 async function requireCampusBoard(boardId: string) {
   const user = await currentUser();
   const school = getUserSchool(user);
-  const board = getBoardById(boardId);
+  const board = await getBoardByIdFromStore(boardId);
   if (!board || !school || board.schoolId !== school.universityId) {
     return null;
   }
   return board;
-}
-
-async function saveState(state: PaperState) {
-  const store = await cookies();
-  store.set(PAPER_COOKIE, JSON.stringify(state), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 400,
-  });
 }
 
 export async function buyPaper(
@@ -61,8 +123,7 @@ export async function buyPaper(
   const price = markPriceCents(board, side);
   const costCents = qty * price;
 
-  let state = await getPaperState(userId);
-  if (state.userId !== userId) state = defaultPaperState(userId);
+  const state = await getPaperState(userId);
 
   const existing = state.positions[boardId];
   if (existing && existing.qty > 0 && existing.side !== side) {
@@ -94,14 +155,65 @@ export async function buyPaper(
     };
   }
 
-  const newState: PaperState = {
-    ...state,
-    balanceCents: state.balanceCents - costCents,
-    positions: { ...state.positions, [boardId]: next },
-  };
+  await ensureMongoIndexes();
+  const now = new Date();
+  const [accountsCol, positionsCol, tradesCol] = await Promise.all([
+    getPaperAccountsCollection(),
+    getPositionsCollection(),
+    getTradesCollection(),
+  ]);
 
-  await saveState(newState);
+  await accountsCol.updateOne(
+    { userId },
+    {
+      $set: {
+        balanceCents: state.balanceCents - costCents,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        userId,
+        createdAt: now,
+      },
+    },
+    { upsert: true },
+  );
+
+  await positionsCol.updateOne(
+    { userId, boardId },
+    {
+      $set: {
+        side: next.side,
+        qty: next.qty,
+        avgEntryCents: next.avgEntryCents,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        createdAt: now,
+      },
+    },
+    { upsert: true },
+  );
+
+  await tradesCol.insertOne({
+    userId,
+    boardId,
+    side: side as TradeSide,
+    qty,
+    priceCents: price,
+    createdAt: now,
+  });
+
+  const market = await updateBoardMarket(boardId, side as TradeSide, qty, true);
+  if (market) {
+    await publishBoardUpdated({
+      ...market,
+      at: new Date().toISOString(),
+    });
+  }
+
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/boards");
+  revalidatePath("/dashboard/positions");
   revalidatePath(`/dashboard/boards/${boardId}`);
 
   const { yes, no } = yesNoPrices(board);
@@ -124,8 +236,7 @@ export async function sellPaper(
   const board = await requireCampusBoard(boardId);
   if (!board) return { ok: false, error: "Board not available." };
 
-  let state = await getPaperState(userId);
-  if (state.userId !== userId) state = defaultPaperState(userId);
+  const state = await getPaperState(userId);
 
   const existing = state.positions[boardId];
   if (!existing || existing.qty <= 0) {
@@ -135,17 +246,56 @@ export async function sellPaper(
   const price = markPriceCents(board, existing.side);
   const proceedsCents = existing.qty * price;
 
-  const positions = { ...state.positions };
-  delete positions[boardId];
+  await ensureMongoIndexes();
+  const now = new Date();
+  const [accountsCol, positionsCol, tradesCol] = await Promise.all([
+    getPaperAccountsCollection(),
+    getPositionsCollection(),
+    getTradesCollection(),
+  ]);
 
-  const newState: PaperState = {
-    ...state,
-    balanceCents: state.balanceCents + proceedsCents,
-    positions,
-  };
+  await accountsCol.updateOne(
+    { userId },
+    {
+      $set: {
+        balanceCents: state.balanceCents + proceedsCents,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        userId,
+        createdAt: now,
+      },
+    },
+    { upsert: true },
+  );
 
-  await saveState(newState);
+  await positionsCol.deleteOne({ userId, boardId });
+
+  await tradesCol.insertOne({
+    userId,
+    boardId,
+    side: existing.side as TradeSide,
+    qty: -existing.qty,
+    priceCents: price,
+    createdAt: now,
+  });
+
+  const market = await updateBoardMarket(
+    boardId,
+    existing.side as TradeSide,
+    existing.qty,
+    false,
+  );
+  if (market) {
+    await publishBoardUpdated({
+      ...market,
+      at: new Date().toISOString(),
+    });
+  }
+
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/boards");
+  revalidatePath("/dashboard/positions");
   revalidatePath(`/dashboard/boards/${boardId}`);
 
   return {

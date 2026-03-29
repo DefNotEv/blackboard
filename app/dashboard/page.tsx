@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { currentUser } from "@clerk/nextjs/server";
 import { BoardCard } from "@/components/dashboard/board-card";
-import { getBoardsForSchool } from "@/lib/mock-boards";
+import { getBoardsForSchoolFromStore } from "@/lib/boards-store";
 import {
   formatUsd,
-  listOpenPositions,
-  totalUnrealizedCents,
 } from "@/lib/paper-trading";
+import { listOpenPositions, totalUnrealizedCents } from "@/lib/paper-trading-server";
 import { getPaperState } from "@/lib/paper-trading-state";
 import { getUserSchool } from "@/lib/user-school";
 
@@ -20,11 +19,15 @@ function greetingForNow(): string {
 export default async function DashboardPage() {
   const user = await currentUser();
   const school = getUserSchool(user);
-  const campusBoards = school ? getBoardsForSchool(school.universityId) : [];
+  const campusBoards = school
+    ? await getBoardsForSchoolFromStore(school.universityId)
+    : [];
+  const previewBoards = campusBoards.slice(0, 3);
   const paper = user?.id ? await getPaperState(user.id) : null;
-  const openRows = paper ? listOpenPositions(paper) : [];
+  const openRows = paper ? await listOpenPositions(paper) : [];
+  const previewPositions = openRows.slice(0, 3);
   const positionCount = openRows.length;
-  const unrealized = paper ? totalUnrealizedCents(paper) : 0;
+  const unrealized = paper ? await totalUnrealizedCents(paper) : 0;
 
   const name =
     user?.firstName ??
@@ -92,6 +95,14 @@ export default async function DashboardPage() {
               Only boards for your school show here.
             </p>
           </div>
+          {campusBoards.length > 3 ? (
+            <Link
+              href="/dashboard/boards"
+              className="mt-2 inline-flex items-center self-start rounded-lg border border-bb-border bg-bb-surface px-3 py-2 text-sm font-semibold text-bb-dim transition hover:text-bb-chalk sm:mt-0"
+            >
+              View more
+            </Link>
+          ) : null}
         </div>
         <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {campusBoards.length === 0 ? (
@@ -103,7 +114,7 @@ export default async function DashboardPage() {
               for this school ID.
             </p>
           ) : (
-            campusBoards.map((board) => (
+            previewBoards.map((board) => (
               <BoardCard key={board.id} board={board} />
             ))
           )}
@@ -111,9 +122,19 @@ export default async function DashboardPage() {
       </section>
 
       <section id="positions" className="mt-16 scroll-mt-24">
-        <h2 className="font-display text-xl font-extrabold tracking-tight text-bb-chalk">
-          Your positions
-        </h2>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="font-display text-xl font-extrabold tracking-tight text-bb-chalk">
+            Your positions
+          </h2>
+          {openRows.length > 3 ? (
+            <Link
+              href="/dashboard/positions"
+              className="mt-2 inline-flex items-center self-start rounded-lg border border-bb-border bg-bb-surface px-3 py-2 text-sm font-semibold text-bb-dim transition hover:text-bb-chalk sm:mt-0"
+            >
+              View more
+            </Link>
+          ) : null}
+        </div>
         {openRows.length === 0 ? (
           <div className="mt-4 rounded-2xl border border-dashed border-bb-border bg-bb-surface/50 px-6 py-14 text-center">
             <p className="font-semibold text-bb-chalk">No open positions yet</p>
@@ -123,7 +144,7 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <ul className="mt-4 space-y-3">
-            {openRows.map((row) => (
+            {previewPositions.map((row) => (
               <li
                 key={row.boardId}
                 className="flex flex-col gap-2 rounded-2xl border border-bb-border bg-bb-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
