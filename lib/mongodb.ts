@@ -4,10 +4,7 @@ import { MongoClient, type Db } from "mongodb";
 
 const dbName = process.env.MONGODB_DB ?? "blackboard";
 const envMongoUri = process.env.MONGODB_URI;
-if (!envMongoUri) {
-  throw new Error("Missing MONGODB_URI environment variable.");
-}
-const mongoUri: string = envMongoUri;
+const mongoUri: string | null = envMongoUri ?? null;
 
 type GlobalMongoCache = {
   clientPromise?: Promise<MongoClient>;
@@ -22,6 +19,9 @@ if (!globalForMongo.__mongo) {
 }
 
 function createClientPromise() {
+  if (!mongoUri) {
+    throw new Error("Missing MONGODB_URI environment variable.");
+  }
   const client = new MongoClient(mongoUri);
   return client.connect();
 }
