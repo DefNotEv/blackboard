@@ -47,10 +47,14 @@ export async function getAllBoardsFromStore(): Promise<BoardPreview[]> {
       )
       .toArray();
 
-    if (boards.length === 0) return [...MOCK_BOARDS];
-    return boards.map(toPreview);
+    if (boards.length === 0) {
+      return MOCK_BOARDS.filter((board) => board.schoolId === "purdue");
+    }
+    return boards
+      .map(toPreview)
+      .filter((board) => board.schoolId === "purdue");
   } catch {
-    return [...MOCK_BOARDS];
+    return MOCK_BOARDS.filter((board) => board.schoolId === "purdue");
   }
 }
 
@@ -81,9 +85,13 @@ export async function getBoardByIdFromStore(
         },
       },
     );
-    if (board) return toPreview(board as BoardDocShape);
+    if (board) {
+      const preview = toPreview(board as BoardDocShape);
+      if (preview.schoolId !== "purdue") return undefined;
+      return preview;
+    }
   } catch {
     // Fall through to mock fallback.
   }
-  return MOCK_BOARDS.find((b) => b.id === id);
+  return MOCK_BOARDS.find((b) => b.id === id && b.schoolId === "purdue");
 }
